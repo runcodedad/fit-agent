@@ -24,7 +24,7 @@ Also confirmed: `Decode` + `FitListener` (`decoder.MesgEvent += fitListener.OnMe
   .gitignore                                (bin/, obj/, *.fit test outputs, .env)
   src/
     Garmin.WorkoutAgent.Core/
-      Garmin.WorkoutAgent.Core.csproj        (net8.0; PackageReference Garmin.FIT.Sdk 21.217.0, Anthropic *)
+      Garmin.WorkoutAgent.Core.csproj        (net10.0; PackageReference Garmin.FIT.Sdk 21.217.0, Anthropic *)
       Model/
         WorkoutPlan.cs
         WorkoutStep.cs
@@ -46,11 +46,11 @@ Also confirmed: `Decode` + `FitListener` (`decoder.MesgEvent += fitListener.OnMe
         FitWorkoutFileWriter.cs              (FileId -> Workout -> Steps -> Close pipeline)
       WorkoutAgent.cs                        (facade: NL string -> .fit bytes/file, composes the above)
     Garmin.WorkoutAgent.Cli/
-      Garmin.WorkoutAgent.Cli.csproj         (net8.0, OutputType Exe, ProjectReference to Core)
+      Garmin.WorkoutAgent.Cli.csproj         (net10.0, OutputType Exe, ProjectReference to Core)
       Program.cs
   tests/
     Garmin.WorkoutAgent.Core.Tests/
-      Garmin.WorkoutAgent.Core.Tests.csproj  (net8.0, xUnit, PackageReference Garmin.FIT.Sdk for decode-based assertions)
+      Garmin.WorkoutAgent.Core.Tests.csproj  (net10.0, xUnit, PackageReference Garmin.FIT.Sdk for decode-based assertions)
       Mapping/
         FitWorkoutMapperTests.cs             (fixed WorkoutPlan fixtures -> assert exact WorkoutStepMesg field values)
         FitTargetEncoderTests.cs             (unit tests for the HR/power convention specifically)
@@ -64,7 +64,7 @@ Rationale for `src/`+`tests/` split and `Core`/`Cli` naming: keeps the class lib
 `Garmin.WorkoutAgent.Core.csproj` key elements:
 ```xml
 <PropertyGroup>
-  <TargetFramework>net8.0</TargetFramework>
+  <TargetFramework>net10.0</TargetFramework>
   <Nullable>enable</Nullable>
   <ImplicitUsings>enable</ImplicitUsings>
 </PropertyGroup>
@@ -73,7 +73,9 @@ Rationale for `src/`+`tests/` split and `Core`/`Cli` naming: keeps the class lib
   <PackageReference Include="Anthropic" Version="*" />
 </ItemGroup>
 ```
-(Pin `Garmin.FIT.Sdk` to `21.217.0` rather than `*` — the reference source checked out locally is exactly that profile version, and pinning avoids silent behavior drift in the scale/offset tables just analyzed. Anthropic SDK can float since only stable, documented surface is used.)
+(Pin `Garmin.FIT.Sdk` to `21.217.0` rather than `*` — the reference source checked out locally is exactly that profile version, and pinning avoids silent behavior drift in the scale/offset tables just analyzed. Anthropic SDK can float since only stable, documented surface is used. `TargetFramework=net10.0` implies `LangVersion=14` by default — no explicit `<LangVersion>` element needed; the local machine has the .NET 10 SDK (`10.0.100`) installed alongside 8.0.404/9.0.101, so no SDK install step is required before scaffolding.)
+
+Confirmed from the local checkout (`/home/nick/Code/fit-csharp-sdk/FitSDK.csproj`): the SDK multi-targets `netcoreapp2.0;net46;netstandard2.0`, no `net10.0`-specific target. This is not a blocker — `netstandard2.0` is fully consumable from a `net10.0` project — but it does mean the SDK's own binary was built/tested against much older runtimes, so keep the round-trip `Decode` integration test (§7.3) as the real gate on cross-runtime correctness rather than assuming NuGet restore succeeding is sufficient proof.
 
 ## 2. Domain model (plain C#, FIT-agnostic)
 
@@ -255,6 +257,8 @@ public sealed class WorkoutInterpreterOptions
   }
   ```
   This isolation is exactly what `FitTargetEncoderTests.cs` should pin down with explicit input->raw-byte-equivalent assertions (e.g. "135 bpm low -> `GetCustomTargetHeartRateLow()` returns 235").
+
+  C# 14 note: since every `FitTargetEncoder` method's first parameter is the `WorkoutStepMesg` being mutated, this reads more naturally as C# 14 extension members (`extension(WorkoutStepMesg mesg) { public void ApplyPaceRange(...) { ... } }`) called as `mesg.ApplyPaceRange(fastMps, slowMps)`, rather than a static-class-with-static-methods. Either form is fine functionally — pick the extension-member form if targeting a cleaner call-site reads as worth it; keep the static-class form if extension members feel like unneeded ceremony for three small methods. Not a correctness issue either way.
 - `WorkoutMesg` construction: `SetWktName(plan.Name)`, `SetSport(Sport.Running)`, `SetSubSport(SubSport.Invalid)` (generic; v1 doesn't need Track/Road/Trail distinction unless Claude infers it — could optionally map "on a track" mentions to `SubSport.Track`, but treat as a nice-to-have, not required for v1), `SetNumValidSteps((ushort)totalStepCount)`, optional `SetWktDescription(plan.Description)`.
 
 ## 5. FIT file writer (`FitWorkoutFileWriter`)
