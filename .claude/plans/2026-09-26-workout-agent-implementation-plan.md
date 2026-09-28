@@ -18,13 +18,13 @@ Also confirmed: `Decode` + `FitListener` (`decoder.MesgEvent += fitListener.OnMe
 ## 1. Project structure
 
 ```
-/home/nick/Code/runcodedad/garmin/         (now fit-agent/)
-  Garmin.WorkoutAgent.sln
+/home/nick/Code/runcodedad/fit-agent/
+  Fit.Agent.sln
   README.md                                 (usage + manual watch-transfer instructions)
   .gitignore                                (bin/, obj/, *.fit test outputs, .env)
   src/
-    Garmin.WorkoutAgent.Core/
-      Garmin.WorkoutAgent.Core.csproj        (net10.0; PackageReference Garmin.FIT.Sdk 21.217.0, Anthropic *)
+    Fit.Agent.Core/
+      Fit.Agent.Core.csproj                  (net10.0; PackageReference Garmin.FIT.Sdk 21.217.0, Anthropic *)
       Model/
         WorkoutPlan.cs
         WorkoutStep.cs
@@ -45,12 +45,12 @@ Also confirmed: `Decode` + `FitListener` (`decoder.MesgEvent += fitListener.OnMe
         IFitWorkoutFileWriter.cs
         FitWorkoutFileWriter.cs              (FileId -> Workout -> Steps -> Close pipeline)
       WorkoutAgent.cs                        (facade: NL string -> .fit bytes/file, composes the above)
-    Garmin.WorkoutAgent.Cli/
-      Garmin.WorkoutAgent.Cli.csproj         (net10.0, OutputType Exe, ProjectReference to Core)
+    Fit.Agent.Cli/
+      Fit.Agent.Cli.csproj                   (net10.0, OutputType Exe, ProjectReference to Core)
       Program.cs
   tests/
-    Garmin.WorkoutAgent.Core.Tests/
-      Garmin.WorkoutAgent.Core.Tests.csproj  (net10.0, xUnit, PackageReference Garmin.FIT.Sdk for decode-based assertions)
+    Fit.Agent.Core.Tests/
+      Fit.Agent.Core.Tests.csproj            (net10.0, xUnit, PackageReference Garmin.FIT.Sdk for decode-based assertions)
       Mapping/
         FitWorkoutMapperTests.cs             (fixed WorkoutPlan fixtures -> assert exact WorkoutStepMesg field values)
         FitTargetEncoderTests.cs             (unit tests for the HR/power convention specifically)
@@ -59,9 +59,9 @@ Also confirmed: `Decode` + `FitListener` (`decoder.MesgEvent += fitListener.OnMe
         SampleWorkouts.cs                     (shared fixed WorkoutPlan builders: "800s repeats", "simple tempo run")
 ```
 
-Rationale for `src/`+`tests/` split and `Core`/`Cli` naming: keeps the class library dependency-free of console concerns (per decision #2 — no `Console.ReadLine`/`Console.WriteLine` inside `Core`; all I/O happens in `Cli`), and leaves an obvious slot for a future `Garmin.WorkoutAgent.Api` (ASP.NET Core minimal API) sibling under `src/` that references `Core` the same way `Cli` does — nothing in `Core`'s public surface should assume a synchronous console (use `async Task<...>` throughout so a future controller can `await` the same facade).
+Rationale for `src/`+`tests/` split and `Core`/`Cli` naming: keeps the class library dependency-free of console concerns (per decision #2 — no `Console.ReadLine`/`Console.WriteLine` inside `Core`; all I/O happens in `Cli`), and leaves an obvious slot for a future `Fit.Agent.Api` (ASP.NET Core minimal API) sibling under `src/` that references `Core` the same way `Cli` does — nothing in `Core`'s public surface should assume a synchronous console (use `async Task<...>` throughout so a future controller can `await` the same facade).
 
-`Garmin.WorkoutAgent.Core.csproj` key elements:
+`Fit.Agent.Core.csproj` key elements:
 ```xml
 <PropertyGroup>
   <TargetFramework>net10.0</TargetFramework>
@@ -291,10 +291,10 @@ public sealed class FitWorkoutFileWriter : IFitWorkoutFileWriter
 ```
 Overload/wrap with a `Task WriteToFileAsync(WorkoutPlan plan, string path)` on the `WorkoutAgent` facade that opens a `FileStream`, calls the mapper then this writer, and closes the stream — mirroring the Cookbook's `CreateWorkout` sequencing exactly (FileId first, Workout second, steps in message-index order, then `Close()`).
 
-## 6. CLI (`Garmin.WorkoutAgent.Cli`)
+## 6. CLI (`Fit.Agent.Cli`)
 
 Minimal argument handling (no need for a heavy CLI-parsing package given the small surface):
-- `garmin-workout-agent "<prompt text>" -o output.fit` — positional prompt argument (or `--stdin` flag to read from stdin if no positional arg given, per decision #2), `-o`/`--output` for destination path (default: sanitized workout name + `.fit` in the current directory).
+- `fit-agent "<prompt text>" -o output.fit` — positional prompt argument (or `--stdin` flag to read from stdin if no positional arg given, per decision #2), `-o`/`--output` for destination path (default: sanitized workout name + `.fit` in the current directory).
 - Optional `--model <id>` to override `WorkoutInterpreterOptions.Model` without touching env vars.
 - Flow: parse args -> read `ANTHROPIC_API_KEY` (fail fast with a clear message if unset and no `--api-key` override) -> `await workoutAgent.CreateFitFileAsync(prompt, outputPath)` -> print success with the resolved path and step count, or catch and print a friendly error for: missing API key, Claude API errors (rate limit/timeout — via the SDK's typed exceptions), and JSON-schema/deserialization failures (surface Claude's raw response for debugging when `--verbose` is passed).
 - Exit codes: 0 success, 1 usage error, 2 interpretation/mapping error.
@@ -318,10 +318,10 @@ Minimal argument handling (no need for a heavy CLI-parsing package given the sma
 7. Write the README (usage, `ANTHROPIC_API_KEY` setup, manual watch-transfer instructions: USB mass storage into `GARMIN/NewFiles/` or Garmin Connect's "Import workout" feature).
 
 ### Critical Files for Implementation
-- `src/Garmin.WorkoutAgent.Core/Mapping/FitWorkoutMapper.cs`
-- `src/Garmin.WorkoutAgent.Core/Mapping/FitTargetEncoder.cs`
-- `src/Garmin.WorkoutAgent.Core/Encoding/FitWorkoutFileWriter.cs`
-- `src/Garmin.WorkoutAgent.Core/Interpretation/ClaudeWorkoutInterpreter.cs`
-- `src/Garmin.WorkoutAgent.Core/Model/WorkoutPlan.cs`
+- `src/Fit.Agent.Core/Mapping/FitWorkoutMapper.cs`
+- `src/Fit.Agent.Core/Mapping/FitTargetEncoder.cs`
+- `src/Fit.Agent.Core/Encoding/FitWorkoutFileWriter.cs`
+- `src/Fit.Agent.Core/Interpretation/ClaudeWorkoutInterpreter.cs`
+- `src/Fit.Agent.Core/Model/WorkoutPlan.cs`
 - `/home/nick/Code/fit-csharp-sdk/Cookbook/WorkoutEncode/Program.cs` (reference only, do not copy)
 - `/home/nick/Code/fit-csharp-sdk/Dynastream/Fit/Profile.cs` (reference only, source of truth for scale/offset)
